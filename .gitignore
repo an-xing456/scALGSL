@@ -1,0 +1,11 @@
+/experiments
+/experiment
+*.csv
+*.pt
+*.h5ad
+*.h5seurat
+*.sh
+/config
+/other_methods
+/plot
+/compare_graph.py
