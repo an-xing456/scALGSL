@@ -1,4 +1,3 @@
-import dgl
 import os
 from utils import load_data
 import numpy as np
@@ -6,11 +5,11 @@ import torch
 from model import GTModel
 import json
 import argparse
-from prognn import ProGNN
+from model.prognn import ProGNN
 import pandas as pd
 import copy
 from utils import setup_seed
-from scipy.sparse import csr_matrix, save_npz, load_npz
+from scipy.sparse import save_npz
 
 setup_seed()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
