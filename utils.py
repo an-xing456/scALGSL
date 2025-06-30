@@ -29,17 +29,22 @@ def setup_seed(seed=32):
     random.seed(seed)       
     np.random.seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.cuda.manual_seed(seed)
-        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8' #CUDA >= 10.2 version will prompt to set this environment variable
+        torch.cuda.manual_seed_all(seed) #所有GPU
+        torch.cuda.manual_seed(seed)     # 当前GPU    
+        # CUDA有些算法是non deterministic, 需要限制    
+        os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8' # CUDA >= 10.2版本会提示设置这个环境变量
         torch.use_deterministic_algorithms(True)        
     print("set up seed!")
 
 def normalize_adj(adj):
     adj = adj + np.eye(adj.shape[0])
-    rowsum = adj.sum(1)
-    r_inv_sqrt = np.where(rowsum != 0, 1 / np.sqrt(rowsum), 0)
-    r_mat_inv_sqrt = np.diag(r_inv_sqrt)
+    # 计算行和
+    rowsum = adj.sum(1)    
+    # 计算每行的倒数的平方，并将无穷大值替换为 0
+    r_inv_sqrt = np.where(rowsum != 0, 1 / np.sqrt(rowsum), 0)    
+    # 构建对角矩阵
+    r_mat_inv_sqrt = np.diag(r_inv_sqrt)    
+    # 对称归一化
     norm_adj = r_mat_inv_sqrt @ adj @ r_mat_inv_sqrt    
     return norm_adj
 
@@ -66,7 +71,7 @@ def median_normalization(data):
     '''
     row_sum = np.sum(data, axis=1)
     mean_transcript = np.mean(row_sum)
-    print("The average expression level of cells is {:.3f}".format(mean_transcript))
+    print("细胞平均表达量是 {:.3f}".format(mean_transcript))
     row_sum[np.where(row_sum == 0)] = 1
     # scale_factor = 1e4
     # data_norm = np.log1p((data / row_sum.reshape(-1 ,1))*scale_factor)
@@ -83,20 +88,24 @@ def combine_inter_intra_graph(inter_graph_path, intra_graph_path, n_nodes_ref, n
     inter_graph = pd.read_csv(inter_graph_path, index_col=0)
     intra_graph = pd.read_csv(intra_graph_path, index_col=0)
 
-
+    
+    # 先对query的数目做一个映射, 变成 ref_num + idx
     inter_graph['V2'] += n_nodes_ref
     intra_graph['V1'] += n_nodes_ref
     intra_graph['V2'] += n_nodes_ref
-
+    
+    # 获取row和col
     row = inter_graph['V1'].tolist() + intra_graph['V1'].tolist()
     col = inter_graph['V2'].tolist() + intra_graph['V2'].tolist()
-
-    # Construct an adj matrix (ensuring it is a symmetric matrix and an undirected graph)
+    
+    
+    
+    # 构建一个adj矩阵（保证是对称矩阵，是无向图)
     adj = np.identity(n_nodes_ref+n_nodes_query)
     adj[row, col] = 1
     adj[col, row] = 1
 
-    # convert COO format
+    # 再转成COO format
     row, col = adj.nonzero()
     row = list(row)
     col = list(col)
@@ -107,12 +116,12 @@ def get_auxilary_graph(auxilary_graph_path, n_nodes):
     auxilary_graph = pd.read_csv(auxilary_graph_path, index_col=0)
     row = auxilary_graph['V1'].tolist()
     col = auxilary_graph['V2'].tolist()    
-    # Construct an adj matrix (ensuring it is a symmetric matrix and an undirected graph)
+    # 构建一个adj矩阵（保证是对称矩阵，是无向图)
     adj = np.identity(n_nodes)
     adj[row, col] = 1
     adj[col, row] = 1
     
-    # convert COO format
+    # 再转成COO format
     row, col = adj.nonzero()
     row = list(row)
     col = list(col)
@@ -144,8 +153,8 @@ def perc_for_density(input, k): return sum([1 if i else 0 for i in input > input
 
 
 def random_stratify_sample(ref_labels, train_size):
-    # Each class is randomly sampled and divided into train and val
-    # This place needs to ensure that the data of the train starts counting from 0.
+    # 对每个类都进行随机采样，分成train, val
+    # 这地方要保证train的数据是从0开始计数的,
     # print(ref_labels.squeeze())
     
     label_set = set(list(ref_labels.squeeze()))
@@ -165,8 +174,8 @@ def random_stratify_sample(ref_labels, train_size):
 def random_stratify_sample_with_train_idx(ref_labels, train_idx, init_num_per_class):
     '''
     paramters:
-        train_idx: Training set subscript
-        init_num_per_class: Select a certain initial number of nodes for each class
+        train_idx: 训练集下标
+        init_num_per_class: 针对每一个类选取一定初始数目节点
     '''
     label_set = list(set(list(ref_labels.squeeze())))
     label_set.sort()
@@ -187,7 +196,9 @@ def get_anndata(args):
     
     ref_data_h5 = ad.read_h5ad(os.path.join(data_dir, 'ref_data.h5ad'))
     query_data_h5 = ad.read_h5ad(os.path.join(data_dir, 'query_data.h5ad'))
-    auxilary_data_h5 = ad.read_h5ad(os.path.join(data_dir, 'auxilary_data.h5ad'))
+
+    if args.use_auxilary:
+        auxilary_data_h5 = ad.read_h5ad(os.path.join(data_dir, 'auxilary_data.h5ad'))
     
     ref_data = ref_data_h5.X.toarray()
     query_data = query_data_h5.X.toarray()
@@ -199,8 +210,9 @@ def get_anndata(args):
                                             intra_graph_path=os.path.join(data_dir, 'intra_graph.csv'),
                                             n_nodes_ref=ref_data.shape[0],
                                             n_nodes_query=query_data.shape[0])
-
-    auxilary_edge_index = get_auxilary_graph(auxilary_graph_path=os.path.join(data_dir, 'auxilary_graph.csv'), n_nodes=auxilary_data_h5.n_obs)
+    
+    if args.use_auxilary:
+        auxilary_edge_index = get_auxilary_graph(auxilary_graph_path=os.path.join(data_dir, 'auxilary_graph.csv'), n_nodes=auxilary_data_h5.n_obs)            
 
     adata = ad.AnnData(csr_matrix(data, dtype=float), dtype=float)
     
@@ -208,22 +220,25 @@ def get_anndata(args):
     adata.var_names = ref_data_h5.var_names
     adata.obs['cell_type'] = label        
     adata.uns['edge_index'] = edge_index
+    if args.use_auxilary:
     # take auxilary data all into all_data        
-    adata.uns['auxilary_data'] = auxilary_data_h5.X.toarray()
-    adata.uns['auxilary_label'] = auxilary_data_h5.obsm['label']
-    adata.uns['auxilary_edge_index'] = auxilary_edge_index
+        adata.uns['auxilary_data'] = auxilary_data_h5.X.toarray()
+        adata.uns['auxilary_label'] = auxilary_data_h5.obsm['label']
+        adata.uns['auxilary_edge_index'] = auxilary_edge_index                                        
     adata.uns['n_ref'] = ref_data_h5.n_obs
     adata.uns['n_query'] = query_data_h5.n_obs        
     
     return adata, adata.uns['n_ref'], adata.uns['n_query']
+    
 
-def load_data(args):
+
+def load_data(args, use_auxilary=True):
     if os.path.exists(os.path.join(args.data_dir, 'all_data.h5ad')):
         adata = ad.read_h5ad(os.path.join(args.data_dir, 'all_data.h5ad'))
         n_ref = adata.uns['n_ref']
         n_query = adata.uns['n_query']
     else:
-    # data preparation
+    # 数据准备
         adata, n_ref, n_query = get_anndata(args=args)    
     
     # if not 'edge_index_knn' in adata.uns:
@@ -260,19 +275,20 @@ def load_data(args):
         g_data.ndata['PE'] = torch.FloatTensor(adata.uns['PE'])
 
     auxilary_g_data = None
-    # if not 'auxilary_edge_index_knn' in adata.uns:
-    adata.uns['auxilary_edge_index_knn'] = construct_graph_with_knn(adata.uns['auxilary_data'])
-    adata.write(os.path.join(args.data_dir, 'all_data.h5ad'))
-
-    auxilary_g_data = get_auxilary_g_data(adata=adata)
-
-    if not 'auxilary_PE' in adata.uns:
-        pe_tensor = dgl.lap_pe(auxilary_g_data, k=args.pos_enc_dim, padding=True)
-        adata.uns['auxilary_PE'] = pe_tensor.numpy()
-        adata.write(os.path.join(args.data_dir, 'all_data.h5ad'))
-        auxilary_g_data.ndata['PE'] = pe_tensor
-    else:
-        auxilary_g_data.ndata['PE'] = torch.FloatTensor(adata.uns['auxilary_PE'])
+    if use_auxilary:
+        # if not 'auxilary_edge_index_knn' in adata.uns:
+        adata.uns['auxilary_edge_index_knn'] = construct_graph_with_knn(adata.uns['auxilary_data'])
+        adata.write(os.path.join(args.data_dir, 'all_data.h5ad')) 
+        
+        auxilary_g_data = get_auxilary_g_data(adata=adata)        
+        
+        if not 'auxilary_PE' in adata.uns:            
+            pe_tensor = dgl.lap_pe(auxilary_g_data, k=args.pos_enc_dim, padding=True)
+            adata.uns['auxilary_PE'] = pe_tensor.numpy()
+            adata.write(os.path.join(args.data_dir, 'all_data.h5ad')) 
+            auxilary_g_data.ndata['PE'] = pe_tensor            
+        else:
+            auxilary_g_data.ndata['PE'] = torch.FloatTensor(adata.uns['auxilary_PE'])
     
     
 
@@ -294,29 +310,40 @@ def get_data_info(args, adata, n_ref, n_query):
     train_idx_for_active_learning = random_stratify_sample_with_train_idx(ref_label,
                                                                 train_idx=train_idx,
                                                                 init_num_per_class=args.init_num_per_class)        
-
-    auxilary_label = adata.uns['auxilary_label']
-    idxs = [i for i in range(auxilary_label.shape[0])]
-    random.seed(32)
-    random.shuffle(idxs)
-    if args.auxilary_num != -1:
-        idxs = idxs[:args.auxilary_num]
-    auxilary_train_idx = idxs
-    data_info['auxilary_train_idx'] = auxilary_train_idx
+    
+    if args.use_auxilary:
+        auxilary_label = adata.uns['auxilary_label']
+        idxs = [i for i in range(auxilary_label.shape[0])]
+        random.seed(32)
+        random.shuffle(idxs)
+        if args.auxilary_num != -1:
+            idxs = idxs[:args.auxilary_num]                   
+        auxilary_train_idx = idxs        
+        data_info['auxilary_train_idx'] = auxilary_train_idx
         
 
     random.seed(32)
+    # 对val_idx再做一个split
     random.shuffle(val_idx)
     ration = 0.5
     data_info['val_idx'] = val_idx[:int(len(val_idx) * 0.5)]
     data_info['gt_idx'] = val_idx[int(len(val_idx) * 0.5):]
-    
     data_info['test_idx'] = [i + n_ref for i in range(n_query)]
-
-    data_info['train_idx'] = train_idx_for_active_learning
-
+    # 记录主动学习选取的节点
+    data_info['selected_idx'] = []
+    if args.train_idx:
+        data_info['train_idx'] = np.load(args.train_idx).tolist()
+    else:
+        if args.al:
+            data_info['train_idx'] = train_idx_for_active_learning        
+        else:
+            data_info['train_idx'] = train_idx     
+       
+    
     data_info['class_num'] = len(np.unique(adata.obs['cell_type'].to_numpy()))
-    data_info['auxilary_class_num'] = adata.uns['auxilary_label'].shape[1]
+    # 回归任务也需要知道label的dim
+    if args.use_auxilary:
+        data_info['auxilary_class_num'] = adata.uns['auxilary_label'].shape[1]
     
     return data_info            
 
@@ -324,7 +351,9 @@ def get_auxilary_g_data(adata):
     src, dst = adata.uns['auxilary_edge_index_knn'][0], adata.uns['auxilary_edge_index_knn'][1]
     g_data = dgl.graph((src, dst), num_nodes=adata.uns['auxilary_data'].shape[0])
     g_data.ndata['x'] = torch.tensor(adata.uns['auxilary_data'], dtype=torch.float)
-    g_data.ndata['y_true'] = torch.tensor(adata.uns['auxilary_label'], dtype=torch.float)
+    if adata.uns['auxilary_label'].shape[1] > 1:
+        # 获取到最大的作为下标
+        g_data.ndata['y_true'] = torch.tensor(np.argmax(adata.uns['auxilary_label'], axis=1), dtype=torch.long)        
     return g_data
 
 
@@ -354,11 +383,10 @@ def accuracy(output, labels):
 
 def active_learning(g_data, epoch, out_prob, norm_centrality, args, data_info):    
     np.random.seed(32)
-    #Generate α and β using the Beta distribution:
     gamma = np.random.beta(1, 1.005 - args.basef ** epoch)
     alpha = beta = (1 - gamma) / 2
     prob = out_prob
-    if len(data_info['train_idx']) < data_info['max_nodes_num']:
+    if args.al and len(data_info['train_idx']) < data_info['max_nodes_num']:
         print("Active learning!")
         entropy = scipy.stats.entropy(prob.T)
         # kmeans = KMeans(n_clusters=data_info['class_num'], random_state=0).fit(prob)
@@ -374,18 +402,19 @@ def active_learning(g_data, epoch, out_prob, norm_centrality, args, data_info):
         ed_score = euclidean_distances(prob, cluster_centers)        
         # ed_score = euclidean_distances(prob, kmeans.cluster_centers_)
         density = np.min(ed_score, axis=1)
-        # entropy and density norm: Calculate the percentiles in the samples (because only the scores between the samples need to be compared).
+        # entropy和density的norm: 计算样本中的百分位数（因为只需要比较样本之间的分数即可）
         norm_entropy = np.array([perc_for_entropy(entropy, i) for i in range(len(entropy))])
         norm_density = np.array([perc_for_density(density, i) for i in range(len(density))])
         norm_centrality = norm_centrality.squeeze()
         finalweight = alpha * norm_entropy[ref_data_idx] + beta * norm_density + gamma * norm_centrality[ref_data_idx]
 
-        # Exclude the data of train, val and test, and obtain the nodes from the remaining label budget
+        # 把train, val, test的数据排除, 从剩余的label budget里面获取节点
         finalweight[data_info['train_idx'] + data_info['val_idx']] = -100
         select_arr = np.argpartition(finalweight, -args.k_select)[-args.k_select:]
         for node_idx in select_arr:
             if node_idx not in data_info['train_idx']:
                 data_info['train_idx'].append(node_idx)
+                data_info['selected_idx'].append(node_idx)
                 if (args.debug):
                     print("Epoch {:}: pick up {:} node to the training set!".format(epoch, args.k_select))
 

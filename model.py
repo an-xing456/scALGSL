@@ -15,7 +15,7 @@ class SparseMHA(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_dim // num_heads
         self.scaling = hidden_dim ** -0.5
-
+        
 
         self.q_proj = nn.Linear(hidden_dim, hidden_dim, bias=bias)
         self.k_proj = nn.Linear(hidden_dim, hidden_dim, bias=bias)
@@ -30,12 +30,13 @@ class SparseMHA(nn.Module):
         # [N, dh, nh]
         k = self.k_proj(h).reshape(N, self.head_dim, self.num_heads)
         # [N, dh, nh]
-        v = self.v_proj(h).reshape(N, self.head_dim, self.num_heads)
+        v = self.v_proj(h).reshape(N, self.head_dim, self.num_heads)        
+        # 这里把A先当做dense matrix来看待
         # bmm: (b, n, m) * (b, m, q) = (m, n, q)
         # q.transpose(0, 2).transpose(1, 2) = (nh, N, dh)
         # k.transpose(0, 2) = (nh, dh, N)
         # attn = (nh, N, N)
-        attn = torch.mul(A, torch.bmm(q.transpose(0, 2).transpose(1, 2), k.transpose(0, 2)))
+        attn = torch.mul(A, torch.bmm(q.transpose(0, 2).transpose(1, 2), k.transpose(0, 2)))        
         # attn = dglsp.bsddmm(A, q, k.transpose(1, 0))  # (sparse) [N, N, nh]
         # Sparse softmax by default applies on the last sparse dimension.
         # attn = attn.softmax()  # (sparse) [N, N, nh]
@@ -43,12 +44,10 @@ class SparseMHA(nn.Module):
         # v.transpose(0, 2).transpose(1, 2) = [nh,N,dh]
         # attn = [nh, N, N]
         # out = [nh, N, dh]
-        # Calculate the attention weights and calculate the weighted sum to obtain the intermediate result
-        out = torch.bmm(attn, v.transpose(0, 2).transpose(1, 2))
+        out = torch.bmm(attn, v.transpose(0, 2).transpose(1, 2))        
         # out = [N, dh, nh]
         out = out.transpose(0, 1).transpose(1, 2)
         # out = dglsp.bspmm(attn, v)  # [N, dh, nh]
-        # Integrate the outputs of all heads through the linear layer
         out = self.out_proj(out.reshape(N, -1))
         return out
 
@@ -104,7 +103,10 @@ class GTModel(nn.Module):
         self.pos_enc = pos_enc
         self.in_dim = in_dim
         # self.task = args.task
-        self.state_embeddings = None
+        self.state_embeddings = None        
+        self.use_auxilary = args.use_auxilary
+        self.is_auxilary = args.is_auxilary
+        # 论文中使用的nn.Embedding， 原因是输入的数据是词嵌入（整数类型），而我们这里只需要直接映射就好
         self.h_embedding = nn.Linear(self.in_dim, self.hidden_dim)                        
         self.pos_linear = nn.Linear(self.pos_enc_dim, self.hidden_dim)
         self.dropout = nn.Dropout(args.dropout)
@@ -119,7 +121,7 @@ class GTModel(nn.Module):
     
     def get_embeddings(self, g_data, args):
         self.eval()                
-        # edge_index turn into torch.tensor([[srt...], [dst...]])
+        # 这里edge_index 变成 torch.tensor([[srt...], [dst...]])                                  
         # edge_index = torch.stack(g_data.edges())
         # indices = edge_index.to(device)        
         A = g_data.adj().to_dense().to(device)
@@ -135,14 +137,14 @@ class GTModel(nn.Module):
         for layer in self.layers:
             h = layer(A, h)
 
-        if self.state_embeddings is not None:
+        if not args.is_auxilary and args.use_auxilary and self.state_embeddings is not None:
             h = h + self.state_embeddings
         
         return h
     
     def get_classifier_embeddings(self, g_data, args):
         self.eval()                
-        # edge_index turn into torch.tensor([[srt...], [dst...]])
+        # 这里edge_index 变成 torch.tensor([[srt...], [dst...]])                                  
         # edge_index = torch.stack(g_data.edges())
         # indices = edge_index.to(device)        
         A = g_data.adj().to_dense().to(device)
@@ -158,7 +160,7 @@ class GTModel(nn.Module):
         for layer in self.layers:
             h = layer(A, h)
 
-        if not args.is_auxilary and self.state_embeddings is not None:
+        if not args.is_auxilary and args.use_auxilary and self.state_embeddings is not None:
             h = h + self.state_embeddings
 
         h = self.predictor(h)    
@@ -192,6 +194,11 @@ class GTModel(nn.Module):
         self.state_embeddings = embeddings.detach()     
 
     def forward(self, A, features):
+        # A是一个dense的邻接矩阵
+        # indices = edge_index.to(device)
+        # N = features.shape[0] # N * feature_dim
+        # A = dglsp.spmatrix(indices, shape=(N, N))        
+        # A = g.edges()
         h = self.h_embedding(features)   
         h1 = h         
         if self.add_pos_enc:
@@ -205,7 +212,7 @@ class GTModel(nn.Module):
         if self.residual:
             h = h1 + h
         
-        if not self.is_auxilary and self.state_embeddings is not None:
+        if not self.is_auxilary and self.use_auxilary and self.state_embeddings is not None:
             h = h + self.state_embeddings
                                                                 
         h = self.predictor(h)        

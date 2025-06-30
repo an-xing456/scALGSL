@@ -43,13 +43,13 @@ select_feature <- function(data,label,nf=2000){
 normalize_data <- function(data) {
     # median normalization
 
-    data = t(data) # 先转置，变成cell * gene
+    data = t(data) # transpose it to become cell * gene
     row_sum = apply(data, 1, sum)
     mean_t = mean(row_sum)
-    # 细胞表达量为0的地方不用管，设置为1，表示不影响
+    # The area where the cell expression level is 0 can be ignored. Setting it to 1 indicates no impact
     row_sum[row_sum==0] = 1
 
-    # row_sum是vector，会自动广播
+    # row_sum is vector，It will broadcast automatically.
     data = data/row_sum * mean_t
     # turn into gene * cell format
     data = t(data)
@@ -90,7 +90,7 @@ GenerateGraph <- function(Dat1,Dat2,Dat3,Lab1,K,has_auxilary){
     })
     
     # Inter-data graph
-    # 这个函数默认使用cca
+    # This function uses cca by default
     d1.list <- list(objects1[[1]],objects1[[2]])   
     object.nn <- FindIntegrationAnchors(object.list = d1.list, k.anchor=K,verbose=F)
     arc=object.nn@anchors
@@ -178,7 +178,7 @@ main <- function(ref_data_dir,
     write.csv(sel.features, file=paste(paste(base_path, 'data' , 'selected_genes_middle.csv', sep='/')))
         
     norm.auxilary_data = NULL
-    # 加入auxilary data逻辑的判断，这里考虑到cross platform没有auxilaray data
+    # Add the judgment of the auxilary data logic. Here, it is considered that the cross platform does not have auxilaray data
     if (has_auxilary) {
         sel.auxilary_data = auxilary_data[sel.features, ]
         norm.auxilary_data = normalize_data(sel.auxilary_data)

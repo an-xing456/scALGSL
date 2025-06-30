@@ -1,11 +1,16 @@
-/experiments
+
 /experiment
 *.csv
 *.pt
 *.h5ad
 *.h5seurat
 *.sh
+*.mtx
+*.ipynb
+*.npy
+*.npz
 /config
 /other_methods
 /plot
+/Plot
 /compare_graph.py
