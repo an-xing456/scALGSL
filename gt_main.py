@@ -17,7 +17,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 parser = argparse.ArgumentParser()
 # data config
 parser.add_argument('--data_dir', type=str, 
-                             default='/home/Users/kevislin/scALGCN/experiments/bcp1_6000-bcp2_6000-exp0013/data', 
+                             default='../experiments/bcp2_6000-bcp3_6000-exp0050/data',
                              help='data directory')
 parser.add_argument('--output', type=str, default='al_acc.csv', help='output acc file')                
 
@@ -74,20 +74,20 @@ parser.add_argument('--dropout', type=float,
     Graph Structure Learning
 '''
 parser.add_argument('--gt_interval', type=int, 
-                             default=5 , #每隔一个interval训练一次
+                             default=5 , #Train every other interval.
                              help='interval for GL')
 
 parser.add_argument('--alpha', type=float, 
-                    default=0, # LDS设置
+                    default=0, # LDS
                     help='weight of l1 norm')
 parser.add_argument('--beta', type=float, 
-                    default=0, # LDS设置
+                    default=0, # LDS
                     help='weight of nuclear norm')
 parser.add_argument('--gamma', type=float, 
                     default=1, 
                     help='weight of GNN loss')
 parser.add_argument('--lambda_', type=float, 
-                    default=0, # LDS设置  
+                    default=0, # LDS
                     help='weight of feature smoothing')
 
 '''
@@ -147,12 +147,6 @@ parser.add_argument('--turnonal',action='store_true',
                     default=False,
                     help='tmp 后面可以去掉')
 
-
-# 定义一个train_idx, 方便主动学习消融实验
-# 这里需要给出npy文件的路径
-parser.add_argument('--train_idx', type=str,action='store',
-                    default='',
-                    help='train index path')
                     
 args = parser.parse_args()
 if args.config is not None:
@@ -367,6 +361,6 @@ query_embeddings = ref_query_embeddings[adata.uns['n_ref']:]
 
 np.save(os.path.join(exp_save_path, 'ref_embeddings.npy'), ref_embeddings)
 np.save(os.path.join(exp_save_path, 'query_embeddings.npy'), query_embeddings)
-np.save(os.path.join(exp_save_path, 'train_idx.npy'), np.array(data_info['train_idx']))
+
 if args.al:
     np.save(os.path.join(exp_save_path, 'selected_idx.npy'), np.array(data_info['selected_idx']))
