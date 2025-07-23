@@ -138,49 +138,9 @@ parser.add_argument('--bias', action='store_true',
 parser.add_argument('--config', type=str,
                     default=None,
                     help='hyperparameter setting')
-parser.add_argument('--turnoffalgsl',action='store_true',
-                    default=False,
-                    help='tmp 后面可以去掉')
-
-parser.add_argument('--turnonal',action='store_true',
-                    default=False,
-                    help='tmp 后面可以去掉')
 
                     
 args = parser.parse_args()
-if args.config is not None:
-    # 如果已经有了超参数文件，就直接读取    
-    # 这样做最保险，因为当前文件本身中的参数需要保留
-    new_args_dict = json.load(open(args.config, 'r'))
-    del new_args_dict['data_dir']
-    if 'auxilary_num' in new_args_dict.keys():
-        del new_args_dict['auxilary_num']
-    
-    old_args_dict = vars(args)
-    old_args_dict.update(new_args_dict)    
-    args = argparse.Namespace(**old_args_dict)
-
-    # 这里是对已读取的超参数文件进行配置，此处跑gsl+al+auxilary
-    args.use_auxilary = True
-    args.is_auxilary = True        
-    args.al = True
-    args.gsl = True
-    if args.turnoffalgsl:
-        args.al = False
-        args.gsl = False
- 
-    if args.turnonal:
-        args.al = True
-        args.gsl = True
-        args.use_auxilary = True
-    else:
-        args.al = False
-        args.gsl = True
-        args.use_auxilary = True
-    
-    
-    #args.init_num_per_class = 200
-    #args.max_per_class = 250
     
 
 proj = args.data_dir.split('/')[-2]
@@ -251,7 +211,6 @@ new_adj = test_res[3]
 '''
 
 acc_file = args.output
-f1_file = args.output.replace('acc', 'f1')  # 创建对应的f1文件名
 
 ref_proj = proj.split('-')[0]
 query_proj = proj.split('-')[1]
@@ -262,7 +221,6 @@ if args.use_auxilary:
 else:
     auxilary_proj = ''
 
-# 保存配置文件和结果
 with open('config/{:}-{:}-{:}_acc_{:.3f}_f1_{:.3f}.json'.format(
     ref_proj, query_proj, auxilary_proj, test_res[0], test_res[1]), 'w') as f:
     json.dump(vars(args), f)
@@ -281,7 +239,6 @@ if args.use_auxilary:
 
 print("experiment {:}_{:} finished".format(first_key, second_key))
 
-# 保存准确率(acc)
 acc_file_path = os.path.join('result/acc', acc_file)
 os.makedirs(os.path.dirname(acc_file_path), exist_ok=True)
 columns = ["GT + AL + GL", "GT + AL", "GT + GL", "GT"]
@@ -299,28 +256,10 @@ if first_key not in acc_data.index.tolist():
 acc_data.loc[first_key][second_key] = test_res[0]
 acc_data.to_csv(acc_file_path)
 
-# 保存F1值 
-f1_file_path = os.path.join('result/f1', f1_file)
-os.makedirs(os.path.dirname(f1_file_path), exist_ok=True)
 
-if not os.path.exists(f1_file_path):
-    f1_data = pd.DataFrame(columns=columns)
-    f1_data.to_csv(f1_file_path, index=False)
-else:
-    f1_data = pd.read_csv(f1_file_path, index_col=0)
 
-if first_key not in f1_data.index.tolist():
-    new_row = {col: '' for col in f1_data.columns}
-    f1_data.loc[first_key] = new_row
-
-f1_data.loc[first_key][second_key] = test_res[1]
-f1_data.to_csv(f1_file_path)
 
 print("acc is {:.3f}".format(test_res[0]))
-print("f1 is {:.3f}".format(test_res[1]))
-
-print("acc is {:.3f}".format(test_res[0]))
-print("f1 is {:.3f}".format(test_res[1]))
 
 # save query_true.csv, query_predict.csv
 ref_true = data_info['label_encoder'].inverse_transform(g_data.ndata['y_true'].numpy()[:adata.uns['n_ref']])
@@ -350,7 +289,6 @@ if args.use_auxilary:
     cell_states_score = pd.DataFrame(auxilary_output, columns=cell_states)
     print("auxilary label distribution is:")
     label = np.argmax(auxilary_output, axis=1)
-    # 打印label的分布
     print(np.unique(label, return_counts=True))    
     cell_states_score.to_csv(os.path.join(exp_save_path, 'cell_states_score.csv'), index=False)
     
